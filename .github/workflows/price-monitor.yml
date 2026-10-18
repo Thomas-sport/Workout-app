@@ -1,0 +1,52 @@
+name: Prijsmonitor
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # elke 5 minuten (het minimum dat GitHub toestaat)
+  workflow_dispatch:
+    inputs:
+      test_melding:
+        description: "Stuur een testmelding naar je iPhone"
+        type: boolean
+        default: true
+
+concurrency:
+  group: price-monitor
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: price-monitor/requirements.txt
+
+      - run: pip install -r price-monitor/requirements.txt
+
+      # Vorige status ophalen, zodat je maar één melding krijgt per verandering.
+      - uses: actions/cache/restore@v4
+        with:
+          path: price-monitor/state
+          key: monitor-state-${{ github.run_id }}
+          restore-keys: monitor-state-
+
+      - name: Pagina controleren
+        working-directory: price-monitor
+        env:
+          PRODUCT_URL: ${{ vars.PRODUCT_URL }}
+          DOELPRIJS: ${{ vars.DOELPRIJS }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          TEST_MELDING: ${{ inputs.test_melding }}
+        run: python check_once.py
+
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: price-monitor/state
+          key: monitor-state-${{ github.run_id }}
